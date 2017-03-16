@@ -1,0 +1,43 @@
+# !/bin/bash
+# from http://www.xgiovio.com/blog-photos-videos-other/blog/resign-your-ios-ipa-frameworks-and-plugins-included/
+
+#获取参数，包括源APP，开发者证书，描述文件，目的APP
+SOURCE_APP="$1"
+DEVELOP_CER="$2"
+DEVELOP_MOBILEPROV="$3"
+DESTINATION_APP="$4" 
+
+#APP做备份
+TEMP_APP="tmp.app"
+cp -r "$SOURCE_APP" "$TEMP_APP"
+
+#拷贝描述文件
+MOBILEPROV_NAME="embedded.mobileprovision"
+cp "$DEVELOP_MOBILEPROV" "$TEMP_APP/$MOBILEPROV_NAME"
+
+#扫描APP里所有需要重签名的组件，包括app/appex/framework/dylib
+RESIGN_FILES="resign_file.txt"
+echo "Resigning with certificate: $DEVELOP_CER" >&2
+find -d $TEMP_APP  \( -name "*.app" -o -name "*.appex" -o -name "*.framework" -o -name "*.dylib" \) > "$RESIGN_FILES"
+
+#获取描述文件里的授权机制(entitlements.plist)
+RESIGN_ENTITLEMWNTS_FULL="entitlements_full.plist"
+RESIGN_ENTITLEMWNTS="entitlements.plist"
+security cms -D -i "$TEMP_APP/$MOBILEPROV_NAME" > "$RESIGN_ENTITLEMWNTS_FULL"
+/usr/libexec/PlistBuddy -x -c 'Print:Entitlements' "$RESIGN_ENTITLEMWNTS_FULL" > "$RESIGN_ENTITLEMWNTS"
+
+#签名
+while IFS='' read -r line || [[ -n "$line" ]]; do
+    echo "$line"
+    /usr/bin/codesign --continue -f -s "$DEVELOP_CER" --entitlements "$RESIGN_ENTITLEMWNTS"  "$line"
+done < "$RESIGN_FILES"
+
+echo "Creating the Signed APP"
+rm -rf "$DESTINATION_APP"
+mv "$TEMP_APP" "$DESTINATION_APP"
+echo "Created app: $DESTINATION_APP"
+
+#删除签名过程中生成的文件
+rm "$RESIGN_FILES"
+rm "$RESIGN_ENTITLEMWNTS"
+rm "$RESIGN_ENTITLEMWNTS_FULL"
